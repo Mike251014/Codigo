@@ -1,0 +1,170 @@
+
+library(forecast)# Contiene el modelo ARIMA
+library(tseries) #Para series de tiempo
+library(TSA)     #Para series de tiempo
+library(urca)    #Para hacer el Test de Raiz Unitaria (detectar hay o no estacionariedad)
+library(ggplot2) #Para hacer gráficos
+library(dplyr)   #Para la manipulación de datos (filtrar, seleccionar, agregar, transformar)
+library(stats)   #Se usa para diversas pruebas estadísticas (medias,varianza, arima,etc)
+library(seasonal)#Para calcular la serie ajustada de estacionalidad
+library(readxl) 
+library(tidyquant) 
+
+amex <- tq_get(x ="AXP")
+names(amex)
+head(amex)
+
+# Descargar datos de NVIDIA desde 2010 hasta 2024
+amex <- tq_get(x = "AXP", from = "2010-01-01", to = "2024-12-31")
+
+# Verificar los primeros registros
+head(amex)
+
+# Filtrar las fechas entre 2010-01-01 y 2024-12-31 (por si hay datos fuera del rango)
+amex_filtered <- amex %>%
+  filter(date >= as.Date("2010-01-01") & date <= as.Date("2024-12-31"))
+
+# Crear una serie de tiempo con los precios de cierre ajustados, usando la columna de fechas
+amex_ts <- ts(amex_filtered$adjusted, frequency = 12, 
+                start = c(2010, 1), end = c(2024, 12))  # Ajusta inicio y fin
+
+# Graficar usando autoplot sin el parámetro 'frequency'
+autoplot(amex_ts) + 
+  xlab("Años") + 
+  ylab("Precio Ajustado (USD)") + 
+  ggtitle("Evolución de precios ajustados de American Express (2010-2024)")
+
+# Crear una serie de tiempo con los precios de cierre ajustados, usando la columna de fechas
+# Si los datos son diarios, es mejor usar frequency = 365
+amex_ts <- ts(amex_filtered$adjusted, frequency = 365, 
+              start = c(2010, as.numeric(format(min(amex_filtered$date), "%j"))), 
+              end = c(2024, as.numeric(format(max(amex_filtered$date), "%j"))))
+
+# Graficar usando autoplot
+autoplot(amex_ts) + 
+  xlab("Años") + 
+  ylab("Precio Ajustado (USD)") + 
+  ggtitle("Evolución de precios ajustados de American Express (2010-2024)")
+
+# Descomponer la serie temporal de American Express
+amex_decomp <- decompose(amex_ts)
+
+# Graficar los componentes
+par(mfrow = c(2, 2)) # Dividir la ventana gráfica en 2 filas y 2 columnas
+
+# Gráfico de la serie original
+plot(amex_decomp$x, main = "Precio ajustado de AXP - Original", col = "black", ylab = "Precio ajustado (USD)")
+
+# Gráfico de la tendencia
+plot(amex_decomp$trend, main = "Tendencia", col = "blue", ylab = "Valores")
+
+# Gráfico de la estacionalidad
+plot(amex_decomp$seasonal, main = "Estacionalidad", col = "red", ylab = "Valores")
+
+# Gráfico de la irregularidad (residuales)
+plot(amex_decomp$random, main = "Irregularidad", col = "green", ylab = "Valores")
+
+# Descargar datos del índice S&P 500 (símbolo ^GSPC) desde 2010 hasta 2024
+ipir <- tq_get(x = "^GSPC", from = "2010-01-01", to = "2024-12-31")
+
+# Filtrar las fechas entre 2010-01-01 y 2024-12-31 (similar a amex)
+ipir_filtered <- ipir %>%
+  filter(date >= as.Date("2010-01-01") & date <= as.Date("2024-12-31"))
+
+# Crear una serie de tiempo con los precios de cierre ajustados del S&P 500 (frecuencia diaria)
+ipir_ts <- ts(ipir_filtered$adjusted, frequency = 365, 
+              start = c(2010, as.numeric(format(min(ipir_filtered$date), "%j"))))
+
+# Graficar la serie temporal del índice S&P 500
+autoplot(ipir_ts) + 
+  xlab("Años") + 
+  ylab("Precio Ajustado (USD)") + 
+  ggtitle("Evolución de precios ajustados del S&P 500 (2010-2024)")
+
+# Utilizamos la función stl (Seasonal-Trend decomposition using Loess) para descomponer una serie diaria
+
+# Suponiendo que ipir_ts es la serie de tiempo diaria que creamos antes
+# Realizar descomposición usando stl, loess no requiere que haya estacionalidad regular
+ipir_decomp <- stl(ipir_ts, s.window = "periodic")
+
+# Graficar los componentes de la descomposición
+par(mfrow = c(2, 2)) # Se utiliza para dividir la ventana gráfica en una matriz de 2 filas y 2 columnas
+
+# Gráfico de la serie original
+plot(ipir_decomp$time.series[, "seasonal"], main = "S&P 500 - Estacionalidad", col = "red", ylab = "Valores")
+
+# Gráfico de la tendencia
+plot(ipir_decomp$time.series[, "trend"], main = "S&P 500 - Tendencia", col = "blue", ylab = "Valores")
+
+# Gráfico de la irregularidad (residuales)
+plot(ipir_decomp$time.series[, "remainder"], main = "S&P 500 - Irregularidad", col = "green", ylab = "Valores")
+
+# Si lo deseas, también puedes graficar la serie original
+plot(ipir_ts, main = "S&P 500 - Serie Original", col = "black", ylab = "Precio Ajustado (USD)")
+
+# Realizar la prueba de raíz unitaria ADF para la serie temporal diaria del S&P 500
+adf_test_result <- adf.test(ipir_ts)
+print(adf_test_result)
+
+# Verificar si ipir_ts es una serie temporal
+class(ipir_ts)
+
+# Extraer el componente de la serie ajustada sin estacionalidad
+ipir_SA <- ipir_ts - ipir_decomp$time.series[, "seasonal"]
+
+# Abrir una nueva ventana gráfica
+dev.new()
+
+# Graficar la serie de tiempo original y desestacionalizada en un mismo gráfico
+plot(ipir_ts, main = "Figura 3. IPIR - original y desestacionalizada", ylab = "Valor IPIR", col = "black")
+
+# Añadir la serie desestacionalizada en color rojo
+lines(ipir_SA, col = "red")
+
+# Añadir leyenda
+legend("topleft", legend = c("Serie original", "Serie desestacionalizada"), 
+       col = c("black", "red"), lty = 1)
+
+# Cargar las bibliotecas necesarias
+library(forecast)
+
+# Ajustar el modelo ARIMA automáticamente a la serie desestacionalizada (ipir_SA)
+fit_arima <- auto.arima(ipir_SA)
+
+# Resumen del modelo ARIMA ajustado
+summary(fit_arima)
+
+# Diagnóstico del modelo ARIMA (residuos, etc.)
+checkresiduals(fit_arima)
+
+# Realizar una predicción de los próximos 12 periodos (h = 12 puede ser ajustado según tus necesidades)
+forecast_arima <- forecast(fit_arima, h = 12)
+
+# Graficar la predicción del modelo ARIMA
+autoplot(forecast_arima) + 
+  ggtitle("Predicción del S&P 500 desestacionalizado con modelo ARIMA") +
+  xlab("Años") + 
+  ylab("Precio Ajustado (USD)")
+
+# Cargar las bibliotecas necesarias
+library(forecast)
+
+# Ajustar el modelo AR(p) automáticamente a la serie desestacionalizada (ipir_SA)
+# Forzar q = 0 y d = 0 para obtener un modelo AR puro
+fit_ar <- auto.arima(ipir_SA, d = 0, max.q = 0)
+
+# Resumen del modelo AR ajustado
+summary(fit_ar)
+
+# Diagnóstico del modelo AR (residuos, etc.)
+checkresiduals(fit_ar)
+
+# Realizar una predicción de los próximos 12 periodos (puedes ajustar h)
+forecast_ar <- forecast(fit_ar, h = 12)
+
+# Graficar la predicción del modelo AR
+autoplot(forecast_ar) + 
+  ggtitle("Predicción del S&P 500 desestacionalizado con modelo AR") +
+  xlab("Años") + 
+  ylab("Precio Ajustado (USD)")
+
